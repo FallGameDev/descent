@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Descent</title>
+<style>
+  /* ===== Basic page setup ===== */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Trebuchet MS", Verdana, sans-serif; background: #0b1030; }
+
+  /* ===== TITLE SCREEN (wood wall + floor + elevator) ===== */
+  #title {
+    position: fixed; inset: 0;
+    background:
+      linear-gradient(#0000 0 78%, #7a4a24 78% 100%),
+      repeating-linear-gradient(0deg, #b9a15f 0 6px, #c2aa68 6px 9px);
+  }
+  #title h1 { position: absolute; left: 6%; top: 3%; margin: 0; font: 900 clamp(44px, 9vw, 96px) "Arial Black", Impact, sans-serif; color: #111; }
+  #credit { position: absolute; left: 8%; top: 24%; font-size: clamp(16px, 2.6vw, 30px); font-weight: bold; color: #111; max-width: 80%; }
+  #plays { position: absolute; left: 6%; top: 42%; font: bold clamp(18px, 2.8vw, 32px) "Courier New", monospace; color: #111; }
+  #hint { position: absolute; right: 5%; bottom: 8%; font: clamp(20px, 3.4vw, 40px) Georgia, serif; font-style: italic; color: #1a0d05; }
+
+  /* Elevator drawn with CSS */
+  #elev { position: absolute; left: 5%; bottom: 0; width: min(26vw, 300px); height: 52vh; cursor: pointer;
+    background: linear-gradient(#aaa, #ddd); border-radius: 40px 40px 0 0; padding: 12% 8% 0; transition: transform .15s; }
+  #elev:hover { transform: scale(1.03); }
+  #floorNum { position: absolute; top: 4%; left: 50%; transform: translateX(-50%); background: #000; color: #3f6; font: 12px monospace; padding: 2px 8px; }
+  #doors { position: relative; width: 100%; height: 100%; background: #333; overflow: hidden; border: 4px solid #888; }
+  .door { position: absolute; top: 0; width: 50%; height: 100%; background: linear-gradient(90deg, #bbb, #eee); transition: transform .7s; }
+  #dl { left: 0; border-right: 2px solid #777; } #dr { right: 0; }
+  #elev.open #dl { transform: translateX(-100%); } #elev.open #dr { transform: translateX(100%); }
+
+  /* ===== GAME SCREEN (chunky pop style) ===== */
+  #game { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column;
+    background: radial-gradient(circle at 30% 20%, #2a2a7a, #0b1030 70%); }
+  #wrap { position: relative; width: min(96vw, 160vh * 0.9); aspect-ratio: 16/9; }
+  canvas { width: 100%; height: 100%; border: 6px solid #000; border-radius: 22px; box-shadow: 0 10px 0 #000; background: #15184a; display: block; }
+
+  /* Cards used for the elevator chat and game over */
+  #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: #000a; padding: 12px; }
+  .card { background: #fff3c4; border: 6px solid #000; border-radius: 26px; box-shadow: 0 10px 0 #000; padding: 20px; max-width: 560px; width: 100%; text-align: center; color: #111; }
+  .card h2 { margin: 0 0 8px; font: 900 28px "Arial Black", sans-serif; color: #ff3d81; text-shadow: 2px 2px 0 #000; }
+  .card p { font-size: 17px; line-height: 1.4; margin: 8px 0; }
+  .npc { font-size: 54px; }
+  .story { background: #cfe8ff; border: 3px solid #000; border-radius: 14px; padding: 8px; font-size: 15px; }
+  button.pop { display: block; width: 100%; margin: 10px 0 0; padding: 12px; font: 900 17px "Trebuchet MS", sans-serif; background: #38e8a6; color: #111;
+    border: 4px solid #000; border-radius: 16px; box-shadow: 0 6px 0 #000; cursor: pointer; }
+  button.pop:active { transform: translateY(4px); box-shadow: 0 2px 0 #000; }
+  button.alt { background: #ffd23f; }
+  #help { color: #ffd23f; font-weight: bold; margin-top: 14px; text-shadow: 2px 2px 0 #000; }
+</style>
+</head>
+<body>
+
+<!-- ===== TITLE SCREEN ===== -->
+<div id="title">
+  <h1>The Descent</h1>
+  <div id="credit">Idea made by Mayor on roblox! @aidenplayszoz</div>
+  <div id="plays">Times Played: 0</div>
+  <div id="elev"><div id="floorNum">18</div><div id="doors"><div class="door" id="dl"></div><div class="door" id="dr"></div></div></div>
+  <div id="hint">(Click the elevator to start)</div>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="game">
+  <div id="wrap"><canvas id="c" width="800" height="450"></canvas></div>
+  <div id="help">Move: A / D or Arrow keys &nbsp; Jump: W, Up or Space</div>
+</div>
+
+<!-- ===== ELEVATOR CHAT / GAME OVER OVERLAY ===== -->
+<div id="overlay"><div class="card" id="card"></div></div>
+
+<script>
+// ================= STORY DATA =================
+// Each floor has a story intro, a passenger to chat with, and two replies.
+// After floor 8 the list repeats, but the game keeps getting harder forever.
+const FLOORS = [
+  { name: "Lobby of MayNo Corp", story: "Bob Bobberson starts his first day as an elevator operator. Boxes fall from the lobby ceiling. Dodge them!",
+    npc: "🧑‍💼", who: "Manager Pat", line: "Welcome, Bob! Rule one: never be late. Rule two: never look up.",
+    opts: [["Why not look up?", "Just trust me, Bob. Trust me."], ["Got it, boss!", "Great attitude! You will go far. Or down."]] },
+  { name: "Mail Room", story: "Letters fly everywhere on floor 2. Something here seems to be watching the mail.",
+    npc: "📬", who: "Mailbot 3000", line: "BEEP. I deliver letters. One letter says your name, Bob.",
+    opts: [["What does it say?", "It says: DO NOT GO BELOW FLOOR 20. BEEP."], ["I do not read my mail.", "Wise. BEEP. Mail can be sneaky."]] },
+  { name: "Cafeteria", story: "Food fights! Rolling meatballs are coming from the sides, so time your jumps.",
+    npc: "👩‍🍳", who: "Chef Dana", line: "Careful, the soup of the day is angry today.",
+    opts: [["Soup can be angry?", "At MayNo Corp, everything can be angry."], ["I will skip lunch.", "Smart. The meatballs have been rolling since 1998."]] },
+  { name: "Accounting", story: "Numbers rain from the ceiling. The accountants have not left their desks in years.",
+    npc: "🤓", who: "Sam the Accountant", line: "I counted every floor. There are more than the building says.",
+    opts: [["How many are there?", "My calculator broke at floor 99. It started to hum."], ["Maybe you need a nap.", "Sleep is not in the budget, Bob."]] },
+  { name: "Server Room", story: "Sparks and loose cables everywhere. The big computer hums a strange tune.",
+    npc: "🤖", who: "Glitch", line: "I am just a robot. But I know who runs this elevator. It is not you.",
+    opts: [["Then who is it?", "Someone who wants you to keep going down."], ["Robots cannot know that.", "Fair. But the numbers on the buttons keep changing."]] },
+  { name: "Rooftop Garden", story: "Strange vines drop seeds. Even indoors, it is windy and dark.",
+    npc: "🧓", who: "Old Gus", line: "I worked here forty years. I took the elevator down once. Once.",
+    opts: [["What happened?", "I came back up. Different. Ask me no more."], ["Any tips for me?", "Keep moving. Never stand still. Never."]] },
+  { name: "Secret Archive", story: "Dusty files shoot out of shelves. This floor is not on any map.",
+    npc: "🕵️", who: "Agent Q", line: "I am not here. You did not see me. MayNo Corp is hiding something.",
+    opts: [["I will help you!", "Good. Keep descending. I will find clues above."], ["I am just the elevator guy.", "That is exactly what they want you to think."]] },
+  { name: "The Boss's Office", story: "The biggest desk you have ever seen. Everything here wants you to leave.",
+    npc: "😎", who: "Mr. MayNo", line: "Ah, Bob. I wondered when you would arrive. Keep going. I insist.",
+    opts: [["Who are you?", "Your boss, Bob. And the owner of the dark below."], ["Is the job worth it?", "The pay is great. The ride is endless. Ha!"]] }
+];
+
+// ================= SAVE DATA =================
+let plays = 0, best = 0;
+try { plays = +localStorage.getItem("descentPlays") || 0; best = +localStorage.getItem("descentBest") || 0; } catch (e) {}
+const $ = id => document.getElementById(id);
+$("plays").textContent = "Times Played: " + plays;
+function save() { try { localStorage.setItem("descentPlays", plays); localStorage.setItem("descentBest", best); } catch (e) {} }
+
+// ================= GAME STATE =================
+const cv = $("c"), ctx = cv.getContext("2d"), W = 800, H = 450, GROUND = 380;
+const keys = {};
+addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault(); });
+addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+let floor = 1, lives = 3, timeLeft = 0, hazards = [], spawnT = 0, running = false, last = 0, hitCool = 0;
+const bob = { x: 380, y: GROUND - 44, w: 30, h: 44, vx: 0, vy: 0, onGround: true };
+// Random stars for the night-sky background
+const stars = Array.from({ length: 50 }, () => [Math.random() * W, Math.random() * 300, Math.random() * 2 + 1]);
+const COLORS = ["#ff3d81", "#38e8a6", "#ffd23f", "#4cc9ff", "#b388ff"]; // bright accent colors
+
+// ================= SCREEN FLOW =================
+$("elev").onclick = () => {
+  $("elev").classList.add("open");             // open the doors
+  setTimeout(() => {
+    $("title").style.display = "none";
+    $("game").style.display = "flex";
+    plays++; save();
+    floor = 1; lives = 3;
+    showStory();
+  }, 750);
+};
+
+// Show the story card for the floor, then start it
+function showStory() {
+  const f = FLOORS[(floor - 1) % FLOORS.length];
+  card(`<h2>Floor ${floor}: ${f.name}</h2><p class="story">${f.story}</p>
+        <p>Survive for ${duration()} seconds!</p><button class="pop" id="go">Start Floor</button>`);
+  $("go").onclick = () => { hideCard(); startFloor(); };
+}
+
+// Longer floors and more danger as you go
+function duration() { return Math.min(15 + floor * 2, 40); }
+
+function startFloor() {
+  hazards = []; timeLeft = duration(); spawnT = 1; hitCool = 1; bob.x = 380; bob.y = GROUND - bob.h; bob.vx = bob.vy = 0;
+  running = true; last = performance.now(); requestAnimationFrame(loop);
+}
+
+// Elevator ride: talk to the passenger, then move on
+function elevatorScene() {
+  running = false;
+  const f = FLOORS[(floor - 1) % FLOORS.length];
+  card(`<h2>Ding! Floor ${floor} cleared</h2><div class="npc">${f.npc}</div>
+        <p><b>${f.who}</b> is in the elevator with you.</p><p class="story">"${f.line}"</p>
+        <button class="pop alt" id="o0">${f.opts[0][0]}</button><button class="pop alt" id="o1">${f.opts[1][0]}</button>`);
+  [0, 1].forEach(i => $("o" + i).onclick = () => {
+    if (lives < 3) lives++;   // chatting is relaxing, so you heal 1 heart
+    card(`<h2>${f.who}</h2><div class="npc">${f.npc}</div><p class="story">"${f.opts[i][1]}"</p>
+          <p>You feel calmer. ${lives < 3 ? "" : "Hearts are full!"} (Hearts: ${"❤️".repeat(lives)})</p>
+          <button class="pop" id="nx">Press the button for floor ${floor + 1}</button>`);
+    $("nx").onclick = () => { floor++; hideCard(); showStory(); };
+  });
+}
+
+function gameOver() {
+  running = false;
+  const reached = floor; if (reached > best) best = reached; save();
+  card(`<h2>Game Over</h2><div class="npc">💥</div><p>Bob made it to <b>floor ${reached}</b>.</p><p>Best: floor ${best}</p>
+        <button class="pop" id="again">Try Again</button>`);
+  $("again").onclick = () => { floor = 1; lives = 3; plays++; save(); showStory(); };
+}
+
+function card(html) { $("card").innerHTML = html; $("overlay").style.display = "flex"; }
+function hideCard() { $("overlay").style.display = "none"; }
+
+// ================= HAZARDS =================
+function spawn() {
+  // After floor 3, some hazards roll in from the sides
+  if (floor >= 3 && Math.random() < 0.35) {
+    const fromLeft = Math.random() < 0.5, sp = 190 + floor * 14;
+    hazards.push({ type: "roll", x: fromLeft ? -30 : W + 30, y: GROUND - 26, w: 26, h: 26, vx: fromLeft ? sp : -sp, c: COLORS[2] });
+  } else {
+    // Falling boxes aim near Bob sometimes, harder on later floors
+    const aim = Math.random() < Math.min(0.2 + floor * 0.04, 0.6);
+    hazards.push({ type: "fall", x: aim ? bob.x : Math.random() * (W - 40), y: -40, w: 34, h: 34, vy: 170 + floor * 20, delay: 0.6, c: COLORS[Math.floor(Math.random() * 2) * 3] });
+  }
+}
+
+// ================= MAIN LOOP =================
+function loop(now) {
+  if (!running) return;
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  // Player movement
+  const L = keys["a"] || keys["arrowleft"], R = keys["d"] || keys["arrowright"], J = keys["w"] || keys["arrowup"] || keys[" "];
+  bob.vx = (R ? 1 : 0) * 260 - (L ? 1 : 0) * 260;
+  if (J && bob.onGround) { bob.vy = -560; bob.onGround = false; }
+  bob.vy += 1500 * dt;
+  bob.x = Math.max(0, Math.min(W - bob.w, bob.x + bob.vx * dt));
+  bob.y += bob.vy * dt;
+  if (bob.y >= GROUND - bob.h) { bob.y = GROUND - bob.h; bob.vy = 0; bob.onGround = true; }
+
+  // Spawning gets faster with each floor (never below 0.22s)
+  spawnT -= dt;
+  if (spawnT <= 0) { spawn(); spawnT = Math.max(0.22, 1.0 - floor * 0.07); }
+
+  // Move hazards
+  hazards.forEach(h => {
+    if (h.type === "fall") { if (h.delay > 0) h.delay -= dt; else h.y += h.vy * dt; }
+    else h.x += h.vx * dt;
+  });
+  hazards = hazards.filter(h => h.y < H && h.x > -60 && h.x < W + 60);
+
+  // Collisions
+  hitCool -= dt;
+  if (hitCool <= 0) {
+    for (const h of hazards) {
+      if (h.delay > 0) continue;
+      if (bob.x < h.x + h.w && bob.x + bob.w > h.x && bob.y < h.y + h.h && bob.y + bob.h > h.y) {
+        lives--; hitCool = 1.2; hazards = hazards.filter(o => o !== h);
+        if (lives <= 0) { gameOver(); return; }
+        break;
+      }
+    }
+  }
+
+  // Floor timer
+  timeLeft -= dt;
+  if (timeLeft <= 0) elevatorScene();
+}
+
+// ================= DRAWING (chunky pop style) =================
+function box(x, y, w, h, color, r) {
+  ctx.fillStyle = "#000"; ctx.beginPath(); ctx.roundRect(x + 3, y + 5, w, h, r); ctx.fill();   // heavy drop shadow
+  ctx.fillStyle = color; ctx.strokeStyle = "#000"; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); ctx.stroke();                       // thick outline
+}
+
+function draw() {
+  // Night sky background
+  ctx.fillStyle = "#15184a"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#fff"; stars.forEach(s => ctx.fillRect(s[0], s[1], s[2], s[2]));
+  // Floor
+  box(-10, GROUND, W + 20, 90, "#7a4a24", 0);
+  // Warning markers for hazards about to fall
+  hazards.forEach(h => {
+    if (h.type === "fall" && h.delay > 0) { ctx.fillStyle = "#ff3d81"; ctx.font = "bold 28px Arial"; ctx.fillText("!", h.x + 12, 30); }
+    else box(h.x, h.y, h.w, h.h, h.c, h.type === "roll" ? 13 : 6);
+  });
+  // Bob blinks while safe after a hit
+  if (hitCool <= 0 || Math.floor(hitCool * 10) % 2) {
+    box(bob.x, bob.y, bob.w, bob.h, "#4cc9ff", 8);
+    ctx.fillStyle = "#000"; ctx.fillRect(bob.x + 7, bob.y + 12, 5, 7); ctx.fillRect(bob.x + 18, bob.y + 12, 5, 7);
+  }
+  // HUD
+  ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 5; ctx.font = "900 24px Arial Black, Arial";
+  const t = `Floor ${floor}   ⏱ ${Math.max(0, Math.ceil(timeLeft))}s`;
+  ctx.strokeText(t, 16, 36); ctx.fillText(t, 16, 36);
+  const hearts = "❤️".repeat(Math.max(lives, 0));
+  ctx.font = "24px Arial"; ctx.fillText(hearts, W - 100, 36);
+}
+</script>
+</body>
+</html>
